@@ -39,11 +39,7 @@ async def process_registration_command(message: types.Message):
                            'Поздравляю, вы зарегистрированы! Теперь вы можете отправлять выученные вами слова мне. Я сохраню их для вас в виде словаря и помогу проверить ваши знания.')
 
 
-@dp.message_handler(commands=['new_words'])
-def process_new_command(message: types.Message):
-    dp.register_message_handler(translated_words)
-
-
+@dp.message_handler()
 async def translated_words(message: types.Message):
     if message.text == '/stop':
         await message.answer('Остановлено')
@@ -57,6 +53,11 @@ async def translated_words(message: types.Message):
         Words.create(user=user, en_words=translation, ru_words=message.text)
 
     await message.answer("Слово сохранено!")
+
+
+@dp.message_handler(commands=['new_words'])
+def process_new_command(message: types.Message):
+    dp.register_message_handler(translated_words)
 
 
 @dp.message_handler(commands=['words'])
