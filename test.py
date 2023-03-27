@@ -2,6 +2,7 @@ from aiogram import Bot, types
 from aiogram.dispatcher import Dispatcher
 from aiogram.utils import executor
 from googletrans import Translator
+from playhouse.sqlite_ext import SqliteExtDatabase
 
 from config import TOKEN
 from data_base import *
@@ -39,8 +40,19 @@ async def process_registration_command(message: types.Message):
                            'Поздравляю, вы зарегистрированы! Теперь вы можете отправлять выученные вами слова мне. Я сохраню их для вас в виде словаря и помогу проверить ваши знания.')
 
 
+@dp.message_handler(commands=['reg'])
+async def process_registration_command(message: types.Message):
+    with db:
+        user = Users(chat_id=message.chat.id, username=message.from_user.first_name)
+        user.save()
+    await bot.send_message(message.chat.id,
+                           'Поздравляю, вы зарегистрированы! Теперь вы можете отправлять выученные вами слова мне. Я сохраню их для вас в виде словаря и помогу проверить ваши знания.')
+
+
 @dp.message_handler(commands=['new_words'])
-async def translated_words(message: types.Message):
+async def process_new_words_command(message: types.Message):
+    await bot.send_message(message.chat.id,
+                           "Привет! Теперь я буду переводить с русского на английский все, что ты напишешь мне. Чтобы остановить меня, просто напиши /stop.")
     if message.text == '/stop':
         await message.answer('Остановлено')
         return
@@ -52,14 +64,11 @@ async def translated_words(message: types.Message):
         user, _ = Users.get_or_create(chat_id=message.chat.id)
         Words.create(user=user, en_words=translation, ru_words=message.text)
 
-    await message.answer("Слово сохранено!")
-
-
-@dp.message_handler()
-def process_new_command(message: types.Message):
-    await bot.send_message(message.chat.id,
-                 "Привет! Теперь я буду переводить с русского на английский все, что ты напишешь мне. Чтобы остановить меня, просто напиши /stop.")
     dp.register_message_handler(translated_words)
+
+
+async def translated_words(message: types.Message):
+    await process_new_words_command(message)
 
 
 @dp.message_handler(commands=['words'])
@@ -84,16 +93,27 @@ async def process_quiz_command(message: types.Message):
         ru_word = random_data.ru_words
 
     await bot.send_message(message.chat.id, f"Как переводится слово \"{en_word}\"?")
-    await  dp.register_message_handler(message, check_answer, ru_word)
+    dp.register_message_handler(check_answer, lambda m: m.text.lower() == ru_word.lower())
 
 
-def check_answer(message, ru_word):
+async def check_answer(message: types.Message):
+    with db:
+        user, _ = Users.get_or_create(chat_id=message.chat.id)
+        last_word = Words.select().where(Words.user == user).order_by(Words.id.desc()).get()
+        en_word = last_word.en_words
+        ru_word = last_word.ru_words
+
     if message.text.lower() == ru_word.lower():
-        bot.send_message(message.chat.id, "Ответ верный!")
+        await bot.send_message(message.chat.id, "Верно! Поздравляю!")
+        last_word.known = True
+        last_word.save()
     else:
-        bot.send_message(message.chat.id, f"К сожалению, ответ неверный. Правильный ответ: \"{ru_word}\".")
-    process_quiz_command(message)
+        await bot.send_message(message.chat.id, f"Неверно! Правильный ответ: {ru_word}")
+        dp.register_message_handler(check_answer, lambda m: m.text.lower() == ru_word.lower())
 
 
 if __name__ == '__main__':
     executor.start_polling(dp)
+db.connect()
+db.create_tables([Users, Words])
+executor.start_polling(dp, skip_updates=True)
