@@ -74,10 +74,11 @@ async def translate_message(message: types.Message, state: FSMContext):
     translation = translator.translate(message.text, dest=dest).text
     await message.answer(translation)
 
-    async with state.proxy() as data:
-        user_id = str(message.chat.id)
-        user_data = {"en_words": translation, "ru_words": message.text}
-        data[user_id] = user_data
+    with db:
+        user, _ = Users.get_or_create(chat_id=message.chat.id)
+        Words.create(user=user, en_words=translation, ru_words=message.text)
+
+    await message.answer("Слово сохранено!")
 
     await Form.translate.set()
 
@@ -107,17 +108,16 @@ async def start_quiz(message):
     await Form.question.set()
     await message.answer(f"Как переводится слово \"{en_word}\"?")
 
+
 @dp.message_handler(state=Form.question)
 async def check_question(message, state):
-    user_answer = message.text.lower()
     ru_word = await state.get_data()
-
-    if user_answer == ru_word.lower():
-        await message.answer("Ответ верный!")
-        await state.finish()
+    if message.text.lower() == ru_word:
+        await bot.send_message(message.chat.id, "Ответ верный!")
     else:
-        await message.answer(f"К сожалению, ответ неверный. Правильный ответ: \"{ru_word}\".")
-        await state.reset_state()
+        await bot.send_message(message.chat.id, f"К сожалению, ответ неверный. Правильный ответ: \"{ru_word}\".")
+    await state.reset_state()
+
 
 if __name__ == '__main__':
     executor.start_polling(dp)
