@@ -94,16 +94,15 @@ async def process_knownwords_command(message: types.Message):
 
 
 @dp.message_handler(commands=['quiz'])
-async def start_quiz(message):
-    if message.text == '/stop':
-        await message.answer('Остановлено')
-        return
-
+async def start_quiz(message, state):
     with db:
         user, _ = Users.get_or_create(chat_id=message.chat.id)
         random_data = Words.select().where(Words.user == user).order_by(fn.Random()).limit(1).get()
         en_word = random_data.en_words
         ru_word = random_data.ru_words
+
+    async with state.proxy() as data:
+        data['ru_word'] = ru_word
 
     await Form.question.set()
     await message.answer(f"Как переводится слово \"{en_word}\"?")
@@ -111,7 +110,9 @@ async def start_quiz(message):
 
 @dp.message_handler(state=Form.question)
 async def check_question(message, state):
-    ru_word = await state.get_data()
+    async with state.proxy() as data:
+        ru_word = data['ru_word']
+
     if message.text.lower() == ru_word:
         await bot.send_message(message.chat.id, "Ответ верный!")
     else:
