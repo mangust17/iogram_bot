@@ -6,6 +6,7 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.dispatcher import FSMContext
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher.filters import Text
+import asyncio
 
 from config import TOKEN
 from data_base import *
@@ -39,7 +40,8 @@ async def process_start_command(message: types.Message):
                            'Вот перечень моих команд:\n /help - напомнит вам о моих функциях\n /reg - регистрирует вас в'
                            ' моей базе данных (для хранения ваших выученных слов)\n/new_words - вы отправляете мне слово на '
                            'русском, я его перевожу и сохраняю в свою базу данных\n/words - показывает уже выученные вами '
-                           'слова и их перевод\n/quiz - устраивает для вас небольшой опрос для проверки ваших знаний')
+                           'слова и их перевод\n/quiz - устраивает для вас небольшой опрос для проверки ваших знаний\n'
+                           '/stop - остановит любой мой процесс')
 
 
 @dp.message_handler(commands=['help'])
@@ -48,7 +50,8 @@ async def process_help_command(message: types.Message):
                            'Вот перечень моих команд:\n /start - запускает наш диалог\n /reg - регистрирует вас в'
                            ' моей базе данных (для хранения ваших выученных слов)\n/new_words - вы отправляете мне слово на '
                            'русском, я его перевожу и сохраняю в свою базу данных\n/words - показывает уже выученные вами '
-                           'слова и их перевод\n/quiz - устраивает для вас небольшой опрос для проверки ваших знаний')
+                           'слова и их перевод\n/quiz - устраивает для вас небольшой опрос для проверки ваших знаний\n'
+                           '/stop - остановит любой мой процесс')
 
 
 @dp.message_handler(commands=['reg'])
@@ -64,7 +67,7 @@ async def process_registration_command(message: types.Message):
 async def cmd_new_words(message: types.Message):
     await Form.translate.set()
     await message.answer(
-        "Привет! Теперь я буду переводить с русского на английский все, что ты напишешь мне. Чтобы остановить меня, просто напиши /stop."
+        "Теперь я буду переводить с русского на английский все, что ты напишешь мне."
     )
 
 
@@ -117,7 +120,21 @@ async def check_question(message, state):
         await bot.send_message(message.chat.id, "Ответ верный!")
     else:
         await bot.send_message(message.chat.id, f"К сожалению, ответ неверный. Правильный ответ: \"{ru_word}\".")
-    await state.reset_state()
+
+    # Добавляем задержку перед отправкой следующего вопроса
+    await asyncio.sleep(1)
+
+    with db:
+        user, _ = Users.get_or_create(chat_id=message.chat.id)
+        random_data = Words.select().where(Words.user == user).order_by(fn.Random()).limit(1).get()
+        en_word = random_data.en_words
+        ru_word = random_data.ru_words
+
+    async with state.proxy() as data:
+        data['ru_word'] = ru_word
+
+    await Form.question.set()
+    await message.answer(f"Как переводится слово \"{en_word}\"?")
 
 
 if __name__ == '__main__':
