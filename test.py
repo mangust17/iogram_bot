@@ -121,7 +121,6 @@ async def check_question(message, state):
     else:
         await bot.send_message(message.chat.id, f"К сожалению, ответ неверный. Правильный ответ: \"{ru_word}\".")
 
-    # Добавляем задержку перед отправкой следующего вопроса
     await asyncio.sleep(1)
 
     with db:
