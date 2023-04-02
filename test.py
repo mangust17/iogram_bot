@@ -37,38 +37,45 @@ async def cancel_handler(message: types.Message, state: FSMContext):
 async def process_start_command(message: types.Message):
     await bot.send_message(message.chat.id, f'Добро пожаловать, {message.from_user.first_name}!')
     await bot.send_message(message.chat.id,
-                           'Вот перечень моих команд:\n /help - напомнит вам о моих функциях\n /reg - регистрирует вас в'
-                           ' моей базе данных (для хранения ваших выученных слов)\n/new_words - вы отправляете мне слово на '
-                           'русском, я его перевожу и сохраняю в свою базу данных\n/words - показывает уже выученные вами '
-                           'слова и их перевод\n/quiz - устраивает для вас небольшой опрос для проверки ваших знаний\n'
-                           '/stop - остановит любой мой процесс')
+                           'Вот перечень моих команд:\n/help - напомнит вам о моих функциях\n /reg - регистрирует вас в'
+                           ' моей базе данных (для хранения ваших выученных слов)\n/new_words - вы отправляете мне '
+                           'слова на русском, я его перевожу и сохраняю в свою базу данных\n/words - показывает уже '
+                           'выученные вами слова и их перевод\n/quiz - устраивает для вас небольшой опрос для проверки'
+                           ' ваших знаний\n/stop - остановит любой мой процесс')
 
 
 @dp.message_handler(commands=['help'])
 async def process_help_command(message: types.Message):
     await bot.send_message(message.chat.id,
-                           'Вот перечень моих команд:\n /start - запускает наш диалог\n /reg - регистрирует вас в'
-                           ' моей базе данных (для хранения ваших выученных слов)\n/new_words - вы отправляете мне слово на '
-                           'русском, я его перевожу и сохраняю в свою базу данных\n/words - показывает уже выученные вами '
-                           'слова и их перевод\n/quiz - устраивает для вас небольшой опрос для проверки ваших знаний\n'
-                           '/stop - остановит любой мой процесс')
+                           'Вот перечень моих команд:\n /start - запускает наш диалог\n /reg - регистрирует вас в моей'
+                           ' базе данных (для хранения ваших выученных слов)\n/new_words - вы отправляете мне слова '
+                           'на русском, я его перевожу и сохраняю в свою базу данных\n/words - показывает уже выученные'
+                           ' вами слова и их перевод\n/quiz - устраивает для вас небольшой опрос для проверки ваших '
+                           'знаний\n/stop - остановит любой мой процесс')
 
 
 @dp.message_handler(commands=['reg'])
-async def process_registration_command(message: types.Message):
-    with db:
-        user = Users(chat_id=message.chat.id, username=message.from_user.first_name)
-        user.save()
-    await bot.send_message(message.chat.id,
-                           'Поздравляю, вы зарегистрированы! Теперь вы можете отправлять выученные вами слова мне. Я сохраню их для вас в виде словаря и помогу проверить ваши знания.')
+async def registration(message):
+    try:
+        with db:
+            user = Users.select().where(Users.chat_id == message.chat.id).get()
+        await bot.send_message(message.chat.id,
+                               'Вы уже были зарегистрированы ранее.')
+
+    except Users.DoesNotExist:
+        with db:
+            user = Users(chat_id=message.chat.id, username=message.from_user.first_name)
+            user.save()
+        await bot.send_message(message.chat.id,
+                               'Поздравляю, вы зарегистрированы! Теперь вы можете отправлять выученные вами слова мне.'
+                               ' Я сохраню их для вас в виде словаря и помогу проверить ваши знания.')
 
 
 @dp.message_handler(commands=['new_words'])
 async def cmd_new_words(message: types.Message):
     await Form.translate.set()
     await message.answer(
-        "Теперь я буду переводить с русского на английский все, что ты напишешь мне."
-    )
+        "Теперь я буду запоминать и переводить с русского на английский все, что ты мне напишешь.")
 
 
 @dp.message_handler(state=Form.translate)
@@ -87,17 +94,24 @@ async def translate_message(message: types.Message, state: FSMContext):
 
 
 @dp.message_handler(commands=['words'])
-async def process_knownwords_command(message: types.Message):
-    await bot.send_message(message.chat.id, "Вот то, что вы уже знаете:")
+async def process_knownwords_command(message: types.Message, state):
     with db:
         user, _ = Users.get_or_create(chat_id=message.chat.id)
-        known_words = Words.select().where(Words.user == user)
-        words_list = [f"{word.en_words}-{word.ru_words}" for word in known_words]
-    await bot.send_message(message.chat.id, '\n'.join(words_list))
+        if Words.select().where(Words.user == user).exists():
+            known_words = Words.select().where(Words.user == user)
+            words_list = [f"{word.en_words}-{word.ru_words}" for word in known_words]
+            await bot.send_message(message.chat.id, "Вот то, что вы уже знаете:")
+            await bot.send_message(message.chat.id, '\n'.join(words_list))
+        else:
+            await bot.send_message(message.chat.id, "Вы еще не добавили ни одного слова!Что бы добавить слова "
+                                                    "используйте команду /new_words.")
+            await state.finish()
 
 
 @dp.message_handler(commands=['quiz'])
 async def start_quiz(message, state):
+    await bot.send_message(message.chat.id,
+                           'Проведем небольшой опрос для проверки ваших знаний')
     with db:
         user, _ = Users.get_or_create(chat_id=message.chat.id)
         random_data = Words.select().where(Words.user == user).order_by(fn.Random()).limit(1).get()
